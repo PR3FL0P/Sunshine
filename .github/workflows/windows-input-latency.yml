@@ -46,7 +46,14 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          install: >-
+
+      - name: Install build dependencies from the primary MSYS2 server
+        run: |
+          set -euo pipefail
+          # Avoid a slow geo-selected mirror without disabling package signature checks.
+          printf '%s\n' 'Server = https://repo.msys2.org/mingw/$repo/' > /etc/pacman.d/mirrorlist.mingw
+          printf '%s\n' 'Server = https://repo.msys2.org/msys/$arch/' > /etc/pacman.d/mirrorlist.msys
+          dependencies=(
             git
             mingw-w64-ucrt-x86_64-boost
             mingw-w64-ucrt-x86_64-cmake
@@ -62,6 +69,15 @@ jobs:
             mingw-w64-ucrt-x86_64-qt6-static
             mingw-w64-ucrt-x86_64-MinHook
             mingw-w64-ucrt-x86_64-nsis
+          )
+          for attempt in 1 2 3; do
+            if pacman -S --needed --noconfirm "${dependencies[@]}"; then
+              exit 0
+            fi
+            echo "Dependency download attempt $attempt failed; retrying."
+            sleep 10
+          done
+          exit 1
 
       - name: Set up native Windows Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
