@@ -60,6 +60,8 @@ jobs:
             mingw-w64-ucrt-x86_64-cppwinrt
             mingw-w64-ucrt-x86_64-curl-winssl
             mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-libtiff
+            mingw-w64-ucrt-x86_64-harfbuzz
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-nlohmann-json
             mingw-w64-ucrt-x86_64-onevpl
