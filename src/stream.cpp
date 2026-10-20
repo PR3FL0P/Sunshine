@@ -28,6 +28,7 @@ extern "C" {
 #include "display_device.h"
 #include "globals.h"
 #include "input.h"
+#include "input_latency.h"
 #include "logging.h"
 #include "network.h"
 #include "platform/common.h"
@@ -1170,6 +1171,39 @@ namespace stream {
   }
 
   /**
+   * @brief Queue normal input or unwrap a measured mouse packet and acknowledge receipt.
+   * @details Runs on the control thread so control cipher state remains serialized.
+   * The ACK confirms enqueueing only, not Windows injection or game processing.
+   * @param session Stream receiving the input.
+   * @param plaintext Decrypted input packet.
+   */
+  void receive_input(session_t *session, std::vector<std::uint8_t> &&plaintext) {
+    if (plaintext.size() < 8 || input_latency::read32(plaintext.data() + 4, false) != input_latency::envelope_magic) {
+      input::passthrough(session->input, std::move(plaintext));
+      return;
+    }
+    auto receipt = input_latency::parse(plaintext);
+    if (!receipt) {
+      return;
+    }
+    std::vector<std::uint8_t> original(receipt->input.begin(), receipt->input.end());
+    input::passthrough(session->input, std::move(original));
+
+    // Construct the complete V2 header explicitly to avoid padding or byte-order assumptions.
+    std::array<std::uint8_t, 16> response {};
+    response[0] = input_latency::ack_type & 0xFF;
+    response[1] = input_latency::ack_type >> 8;
+    response[2] = receipt->ack.size();
+    std::memcpy(response.data() + 4, receipt->ack.data(), receipt->ack.size());
+    std::array<std::uint8_t, 128> encrypted {};
+    auto payload = encode_control(session, std::string_view(reinterpret_cast<const char *>(response.data()), response.size()), encrypted);
+    if (!payload.empty() && session->control.peer) {
+      session->broadcast_ref->control_server.send(payload, session->control.peer);
+      session->broadcast_ref->control_server.flush();
+    }
+  }
+
+  /**
    * @brief Run the broadcast control-channel worker thread.
    *
    * @param server RTSP server instance handling the request.
@@ -1245,7 +1279,7 @@ namespace stream {
         std::copy(payload.end() - 16, payload.end(), std::begin(iv));
       }
 
-      input::passthrough(session->input, std::move(plaintext));
+      receive_input(session, std::move(plaintext));
     });
 
     server->map(packetTypes[IDX_ENCRYPTED], [server](session_t *session, const std::string_view &payload) {
@@ -1308,7 +1342,7 @@ namespace stream {
       // IDX_INPUT_DATA callback will attempt to decrypt unencrypted data, therefore we need pass it directly
       if (type == packetTypes[IDX_INPUT_DATA]) {
         plaintext.erase(std::begin(plaintext), std::begin(plaintext) + 4);
-        input::passthrough(session->input, std::move(plaintext));
+        receive_input(session, std::move(plaintext));
       } else {
         server->call(type, session, next_payload, true);
       }

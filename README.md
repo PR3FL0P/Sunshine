@@ -1,3 +1,12 @@
+## Experimental mouse receipt ACK build
+
+This fork adds a private mouse receipt acknowledgement extension for the
+[matching Moonlight client](https://github.com/PR3FL0P/moonlight-qt/tree/input-latency).
+It measures a receipt round trip, not exact one-way delivery or game response.
+See [protocol and validation notes](docs/input-latency.md) and the
+[Windows build instructions](https://github.com/PR3FL0P/moonlight-qt/blob/input-latency/input-latency/README.md).
+The Windows build and real streaming session are not yet verified.
+
 <div align="center">
   <img
     src="sunshine.svg"
