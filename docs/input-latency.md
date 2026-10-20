@@ -33,3 +33,19 @@ behavior with mocked transport and encryption boundaries.
 The client release build and isolated protocol tests passed on Linux, including
 Clang AddressSanitizer and UndefinedBehaviorSanitizer. A full Sunshine Windows
 build and end-to-end stream remain unverified. No prebuilt executable is supplied.
+
+## GitHub Actions Windows build
+
+The `Windows Input Latency Build` workflow builds Windows x64 on `windows-2022`
+using MSYS2 UCRT64. It uses the same pinned action revisions as the upstream
+Windows workflow, builds the checked-out source, runs `InputLatency.*` regression
+tests, and uploads a portable ZIP with its SHA-256 checksum and source commit.
+It does not require signing credentials or publish a release.
+
+Open the repository's Actions tab, select **Windows Input Latency Build**, choose
+**Run workflow** and the `input-latency` branch, and wait for the Windows job.
+Download the **Sunshine-Windows-x64-input-latency** artifact from the completed run.
+Extract the artifact, then extract its inner Sunshine ZIP before running it.
+Artifacts are retained for 30 days. The package is unsigned. Back up the existing
+Sunshine configuration and stop the installed Sunshine before starting this build.
+A successful build does not replace an end-to-end streaming test on your host.

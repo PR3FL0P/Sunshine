@@ -1,0 +1,133 @@
+---
+name: Windows Input Latency Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - input-latency
+    paths:
+      - .github/workflows/windows-input-latency.yml
+      - src/input_latency.h
+      - src/stream.cpp
+      - src/rtsp.cpp
+      - tests/unit/test_input_latency.cpp
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-input-latency-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Build and package Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      BUILD_DIR: cmake-build-input-latency
+      MSYS2_PATH_TYPE: inherit
+      BRANCH: ${{ github.ref_name }}
+      BUILD_VERSION: '2026.1018.5342'
+      COMMIT: ${{ github.sha }}
+    steps:
+      - name: Check out source and pinned submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up MSYS2 UCRT64 and build dependencies
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-cppwinrt
+            mingw-w64-ucrt-x86_64-curl-winssl
+            mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-onevpl
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-qt6-static
+            mingw-w64-ucrt-x86_64-MinHook
+            mingw-w64-ucrt-x86_64-nsis
+
+      - name: Set up native Windows Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 'lts/*'
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.14'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: true
+
+      - name: Install pinned Python build tools
+        env:
+          UV_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: uv sync --locked --no-python-downloads --no-install-project
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          cmake -S . -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_DOCS=OFF \
+            -DBUILD_TESTS=ON \
+            -DSUNSHINE_ASSETS_DIR=assets
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR" --parallel 2
+
+      - name: Test mouse receipt envelope parsing
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR/tests"
+          ./test_sunshine.exe --gtest_filter='InputLatency.*' --gtest_output=xml:input-latency-tests.xml
+
+      - name: Package portable ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cd "$BUILD_DIR"
+          cpack -G ZIP
+          cp cpack_artifacts/Sunshine.zip ../artifacts/Sunshine-Windows-x64-input-latency.zip
+          cd ../artifacts
+          sha256sum Sunshine-Windows-x64-input-latency.zip > SHA256SUMS.txt
+          printf 'Source commit: %s\n' "$COMMIT" > BUILD-INFO.txt
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Sunshine-Windows-x64-input-latency
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Windows-build-diagnostics
+          path: |
+            cmake-build-input-latency/CMakeFiles/CMakeConfigureLog.yaml
+            cmake-build-input-latency/tests/input-latency-tests.xml
+          if-no-files-found: ignore
+          retention-days: 7
